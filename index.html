@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <title>聯盟網連結工具</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        .container { max-width: 480px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; font-weight: bold; color: #1f2937; text-align: center; margin-bottom: 0.5rem; }
+        .subtitle { color: #4b5563; text-align: center; margin-bottom: 2rem; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card-title { font-size: 1.125rem; font-weight: 600; color: #1f2937; margin-bottom: 1rem; }
+        input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        button:disabled { background: #9ca3af; }
+        .success { background: #ecfdf5; color: #059669; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.875rem; }
+        .error { background: #fef2f2; color: #dc2626; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+        .result { background: #f0fdf4; padding: 1rem; border-radius: 8px; margin-top: 1rem; }
+        .result-url { 
+            background: white; 
+            padding: 0.75rem; 
+            border-radius: 6px; 
+            border: 1px solid #bbf7d0; 
+            font-size: 0.875rem; 
+            word-break: break-all; 
+            margin-bottom: 0.75rem;
+        }
+        .btn-green { background: #22c55e; }
+        .btn-green:hover { background: #16a34a; }
+        .brands-count { text-align: center; font-size: 0.875rem; color: #6b7280; margin-top: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 聯盟網連結工具</h1>
+        <p class="subtitle">快速將網址轉換為追蹤連結</p>
+
+        <!-- API Key 設定 -->
+        <div class="card">
+            <div class="card-title">API Key</div>
+            <div id="apiSection">
+                <input type="text" id="apiKeyInput" placeholder="輸入您的 API Key">
+                <button id="saveApiKey" onclick="saveApiKey()">驗證並儲存</button>
+            </div>
+            <div id="apiStatus" style="display:none;" class="success"></div>
+        </div>
+
+        <!-- 錯誤訊息 -->
+        <div id="errorMsg" class="error" style="display:none;"></div>
+
+        <!-- 轉換工具 -->
+        <div class="card" id="convertSection" style="display:none;">
+            <div class="card-title">網址轉換</div>
+            <input type="url" id="urlInput" placeholder="https://www.nike.com/tw/...">
+            <button onclick="convertUrl()">轉換為追蹤連結</button>
+            
+            <div id="result" class="result" style="display:none;">
+                <div style="font-weight:500; color:#166534; margin-bottom:0.5rem;">轉換結果：</div>
+                <div class="result-url" id="resultUrl"></div>
+                <button class="btn-green" id="copyBtn" onclick="copyResult()">📋 複製連結</button>
+            </div>
+        </div>
+
+        <div id="brandsCount" class="brands-count"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://api.pub.affiliates.one/api/v2';
+        let brandDomains = {};
+
+        // 從 URL 提取網域
+        function extractDomain(url) {
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname.replace(/^www\./, '');
+            } catch {
+                return null;
+            }
+        }
+
+        // 儲存 API Key
+        async function saveApiKey() {
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            const errorDiv = document.getElementById('errorMsg');
+            const statusDiv = document.getElementById('apiStatus');
+            const convertSection = document.getElementById('convertSection');
+            const saveBtn = document.getElementById('saveApiKey');
+            
+            errorDiv.style.display = 'none';
+            saveBtn.textContent = '驗證中...';
+            saveBtn.disabled = true;
+
+            if (!apiKey) {
+                showError('請輸入 API Key');
+                saveBtn.textContent = '驗證並儲存';
+                saveBtn.disabled = false;
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/affiliates/offers.json?api_key=${apiKey}&approval_statuses=Active&per_page=500&locale=zh-TW`);
+                
+                if (!response.ok) {
+                    throw new Error('API 請求失敗，請檢查 API Key');
+                }
+                
+                const data = await response.json();
+                
+                if (!data.data || data.data.length === 0) {
+                    // 嘗試不篩選
+                    const response2 = await fetch(`${API_BASE}/affiliates/offers.json?api_key=${apiKey}&per_page=500&locale=zh-TW`);
+                    const data2 = await response2.json();
+                    
+                    if (!data2.data || data2.data.length === 0) {
+                        throw new Error('API Key 無效或無法取得品牌資料');
+                    }
+                    
+                    localStorage.setItem('affiliate_api_key', apiKey);
+                    statusDiv.textContent = 'API Key 驗證成功，但尚未申請任何品牌';
+                    statusDiv.style.display = 'block';
+                    saveBtn.textContent = '驗證並儲存';
+                    saveBtn.disabled = false;
+                    return;
+                }
+
+                // 建立網域對照表
+                brandDomains = {};
+                data.data.forEach(brand => {
+                    const domain = extractDomain(brand.preview_url);
+                    if (domain && brand.tracking_link) {
+                        brandDomains[domain] = {
+                            name: brand.name,
+                            trackingLink: brand.tracking_link
+                        };
+                    }
+                });
+
+                localStorage.setItem('affiliate_api_key', apiKey);
+                statusDiv.textContent = `✅ 已載入 ${data.data.length} 個品牌`;
+                statusDiv.style.display = 'block';
+                document.getElementById('apiSection').style.display = 'none';
+                convertSection.style.display = 'block';
+                document.getElementById('brandsCount').textContent = `已載入 ${data.data.length} 個品牌`;
+                
+            } catch (err) {
+                showError(err.message || 'API Key 驗證失敗，請確認 Key 是否正確');
+                saveBtn.textContent = '驗證並儲存';
+                saveBtn.disabled = false;
+            }
+        }
+
+        function showError(msg) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+        }
+
+        // 轉換網址
+        function convertUrl() {
+            const inputUrl = document.getElementById('urlInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            const resultUrl = document.getElementById('resultUrl');
+            
+            document.getElementById('errorMsg').style.display = 'none';
+            resultDiv.style.display = 'none';
+
+            if (!inputUrl) {
+                showError('請輸入網址');
+                return;
+            }
+
+            const inputDomain = extractDomain(inputUrl);
+            
+            if (!inputDomain) {
+                showError('無效的網址格式');
+                return;
+            }
+
+            const brandInfo = brandDomains[inputDomain];
+            
+            if (!brandInfo) {
+                showError(`⚠️ "${inputDomain}" 不在您已申請的品牌列表中`);
+                return;
+            }
+
+            const trackingLink = brandInfo.trackingLink;
+            const encodedUrl = encodeURIComponent(inputUrl);
+            const finalUrl = `${trackingLink}&t=${encodedUrl}`;
+
+            resultUrl.textContent = finalUrl;
+            resultDiv.style.display = 'block';
+            document.getElementById('copyBtn').textContent = '📋 複製連結';
+        }
+
+        // 複製結果
+        async function copyResult() {
+            const resultUrl = document.getElementById('resultUrl').textContent;
+            try {
+                await navigator.clipboard.writeText(resultUrl);
+                document.getElementById('copyBtn').textContent = '✅ 已複製！';
+            } catch {
+                showError('複製失敗，請手動複製');
+            }
+        }
+
+        // 載入已儲存的 API Key
+        window.onload = function() {
+            const savedKey = localStorage.getItem('affiliate_api_key');
+            if (savedKey) {
+                document.getElementById('apiKeyInput').value = savedKey;
+                saveApiKey();
+            }
+        };
+    </script>
+</body>
+</html>
